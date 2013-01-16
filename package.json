@@ -1,0 +1,13 @@
+{
+  "name": "hubot-wechat",
+  "version": "0.0.1",
+  "author": "Zhang Xiao <zhangxiao@xzhang.net>",
+  "description": "WeChat Adapter for Hubot",
+  "keywords": "hubot wechat adapter",
+  "main": "./src/wechat.coffee",
+  "dependencies": {
+    "express": "*",
+    "xmlbuilder": "~0.4.2",
+    "xml-stream": "~0.4.1"
+  }
+}
