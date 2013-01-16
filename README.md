@@ -1,0 +1,1 @@
+# Hubot WeChat Adapter
