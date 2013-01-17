@@ -18,8 +18,6 @@ class WeChat extends Adapter
             path: process.env.HUBOT_WECHAT_PATH || '/wechat'
             media_path: process.env.HUBOT_WECHAT_MEDIA_PATH || '/wechat/media'
 
-    # Listen on port specified by process.env.HUBOT_WECHAT_PORT.
-    # By default using 10080.
     run: ->
         @validate()
         @express = Express()
@@ -40,6 +38,7 @@ class WeChat extends Adapter
             else
                 res.end ''
 
+        # redirect media URL
         @express.get "#{@settings.media_path}/:url", (req, res) =>
             url = req.params.url
             res.redirect url, 301
@@ -49,7 +48,7 @@ class WeChat extends Adapter
             request = Http.get url, (media_res) =>
                 media_res.on 'data', (chunk) =>
                     res.write chunk
-                media_res.on 'end', () ->
+                media_res.on 'end', () =>
                     res.end()
 
         @express.post @settings.path, (req, res) =>
@@ -61,45 +60,52 @@ class WeChat extends Adapter
             req.setEncoding 'utf8'
 
             xml = new XmlStream req
-            xml.on 'updateElement: MsgType', (element) ->
+
+            xml.on 'updateElement: MsgType', (element) =>
                 type = element['$text']
-            xml.on 'updateElement: FromUserName', (element) ->
+
+            xml.on 'updateElement: FromUserName', (element) =>
                 from = element['$text']
-            xml.on 'updateElement: ToUserName', (element) ->
+
+            xml.on 'updateElement: ToUserName', (element) =>
                 to = element['$text']
-            xml.on 'updateElement: Content', (element) ->
+
+            xml.on 'updateElement: Content', (element) =>
                 content = element['$text']
 
             xml.on 'end', () =>
-                Crypto.randomBytes 8, (ex, buf) =>
-                    throw ex if ex?
-                    connection_id = buf.toString 'hex'
-                    user = @userForId connection_id, {
-                        res       : res
-                        from      : from
-                        to        : to
-                        timestamp : timestamp
-                        type      : 'text'
-                    }
-                    @receive new TextMessage user, content
+                user = @userForId from
+                message = new TextMessage user, content
+
+                # put extra data into message
+                message.extra =
+                    http_res  : res
+                    to        : to
+                    timestamp : timestamp
+                    type      : 'text'
+
+                @robot.logger.info "Receive message: #{content}"
+                @receive message
 
         # For now (15th Jan 2013) WeChat only talks to port 80. If set this to
         # another port there has to be a HTTP reverse proxy. e.g. Nginx.
         @express.listen @settings.port
         @emit 'connected'
 
-    reply: (envolope, strings...) ->
+    reply: (envelope, strings...) ->
         strings = strings.map (s) -> "#{envelope.user.name}: #{s}"
         @send envelope, strings...
 
-    send: (envolope, strings...) ->
+    send: (envelope, strings...) ->
         data = ''
         data += str for str in strings
-        user = envolope.user
-        xml = XmlBuilder.create 'xml'
 
-        xml.ele 'ToUserName', user.from
-        xml.ele 'FromUserName', user.to
+        user = envelope.user
+        message = envelope.message
+
+        xml = XmlBuilder.create 'xml'
+        xml.ele 'ToUserName', user.id
+        xml.ele 'FromUserName', message.extra.to
         xml.ele 'CreateTime', Math.floor(Date.now() / 1000).toString()
 
         # Check if message contains image urls.
@@ -120,7 +126,7 @@ class WeChat extends Adapter
 
         xml.end { pretty: true }
 
-        user.res.end xml.toString 'utf8'
+        message.extra.http_res.end xml.toString 'utf8'
 
 exports.use = (robot) ->
   new WeChat robot
